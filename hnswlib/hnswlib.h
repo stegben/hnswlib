@@ -25,7 +25,7 @@
 
 #include <queue>
 #include <vector>
-
+#include <fstream>
 #include <string.h>
 
 namespace hnswlib {
@@ -70,7 +70,7 @@ namespace hnswlib {
     class AlgorithmInterface {
     public:
         virtual void addPoint(const void *datapoint, labeltype label)=0;
-        virtual std::priority_queue<std::pair<dist_t, labeltype >> searchKnn(const void *, size_t) const = 0;
+        virtual std::pair<std::priority_queue<std::pair<dist_t, labeltype>>, int> searchKnn(const void *, size_t) const = 0;
         template <typename Comp>
         std::vector<std::pair<dist_t, labeltype>> searchKnn(const void*, size_t, Comp) {
         }
@@ -84,5 +84,5 @@ namespace hnswlib {
 
 #include "space_l2.h"
 #include "space_ip.h"
-#include "bruteforce.h"
+// #include "bruteforce.h"
 #include "hnswalg.h"

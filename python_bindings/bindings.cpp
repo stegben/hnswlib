@@ -261,6 +261,7 @@ public:
         hnswlib::labeltype *data_numpy_l;
         dist_t *data_numpy_d;
         size_t rows, features;
+        int* counts;
 
         if (num_threads <= 0)
             num_threads = num_threads_default;
@@ -287,11 +288,14 @@ public:
 
             data_numpy_l = new hnswlib::labeltype[rows * k];
             data_numpy_d = new dist_t[rows * k];
+            counts = new int[rows];
 
             if(normalize==false) {
                 ParallelFor(0, rows, num_threads, [&](size_t row, size_t threadId) {
-                                std::priority_queue<std::pair<dist_t, hnswlib::labeltype >> result = appr_alg->searchKnn(
+                                std::pair<std::priority_queue<std::pair<dist_t, hnswlib::labeltype>>, int> result_and_count = appr_alg->searchKnn(
                                         (void *) items.data(row), k);
+                                std::priority_queue<std::pair<dist_t, hnswlib::labeltype>> result = result_and_count.first;
+                                counts[row] = result_and_count.second;
                                 if (result.size() != k)
                                     throw std::runtime_error(
                                             "Cannot return the results in a contigious 2D array. Probably ef or M is to small");
@@ -311,9 +315,10 @@ public:
 
                                 size_t start_idx = threadId * dim;
 								normalize_vector((float *) items.data(row), (norm_array.data()+start_idx));
-
-                                std::priority_queue<std::pair<dist_t, hnswlib::labeltype >> result = appr_alg->searchKnn(
+                                std::pair<std::priority_queue<std::pair<dist_t, hnswlib::labeltype>>, int> result_and_count = appr_alg->searchKnn(
                                         (void *) (norm_array.data()+start_idx), k);
+                                std::priority_queue<std::pair<dist_t, hnswlib::labeltype>> result = result_and_count.first;
+                                counts[row] = result_and_count.second;
                                 if (result.size() != k)
                                     throw std::runtime_error(
                                             "Cannot return the results in a contigious 2D array. Probably ef or M is to small");
@@ -334,20 +339,27 @@ public:
         py::capsule free_when_done_d(data_numpy_d, [](void *f) {
             delete[] f;
         });
-
+        py::capsule free_when_done_count(counts, [](void *f) {
+            delete[] f;
+        });
 
         return py::make_tuple(
-                py::array_t<hnswlib::labeltype>(
-                        {rows, k}, // shape
-                        {k * sizeof(hnswlib::labeltype),
-                         sizeof(hnswlib::labeltype)}, // C-style contiguous strides for double
-                        data_numpy_l, // the data pointer
-                        free_when_done_l),
-                py::array_t<dist_t>(
-                        {rows, k}, // shape
-                        {k * sizeof(dist_t), sizeof(dist_t)}, // C-style contiguous strides for double
-                        data_numpy_d, // the data pointer
-                        free_when_done_d));
+            py::array_t<hnswlib::labeltype>(
+                {rows, k}, // shape
+                {k * sizeof(hnswlib::labeltype),
+                    sizeof(hnswlib::labeltype)}, // C-style contiguous strides for double
+                data_numpy_l, // the data pointer
+                free_when_done_l),
+            py::array_t<dist_t>(
+                {rows, k}, // shape
+                {k * sizeof(dist_t), sizeof(dist_t)}, // C-style contiguous strides for double
+                data_numpy_d, // the data pointer
+                free_when_done_d),
+            py::array_t<int>(
+                {rows},
+                {sizeof(int)},
+                counts,
+                free_when_done_count));
 
     }
 

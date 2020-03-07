@@ -234,18 +234,19 @@ namespace hnswlib {
         }
 
         template <bool has_deletions>
-        std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
+        std::pair<std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>, int>
         searchBaseLayerST(tableint ep_id, const void *data_point, size_t ef) const {
             VisitedList *vl = visited_list_pool_->getFreeVisitedList();
             vl_type *visited_array = vl->mass;
             vl_type visited_array_tag = vl->curV;
-
+            int count = 0;
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidate_set;
 
             dist_t lowerBound;
             if (!has_deletions || !isMarkedDeleted(ep_id)) {
                 dist_t dist = fstdistfunc_(data_point, getDataByInternalId(ep_id), dist_func_param_);
+                count++;
                 lowerBound = dist;
                 top_candidates.emplace(dist, ep_id);
                 candidate_set.emplace(-dist, ep_id);
@@ -291,7 +292,7 @@ namespace hnswlib {
 
                         char *currObj1 = (getDataByInternalId(candidate_id));
                         dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
-
+                        count++;
                         if (top_candidates.size() < ef || lowerBound > dist) {
                             candidate_set.emplace(-dist, candidate_id);
 #ifdef USE_SSE
@@ -314,7 +315,11 @@ namespace hnswlib {
             }
 
             visited_list_pool_->releaseVisitedList(vl);
-            return top_candidates;
+            std::pair<std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>, int> return_val;
+            return_val.first = top_candidates;
+            return_val.second = count;
+
+            return return_val;
         }
 
         void getNeighborsByHeuristic2(
@@ -910,13 +915,20 @@ namespace hnswlib {
             return cur_c;
         };
 
-        std::priority_queue<std::pair<dist_t, labeltype >>
+        std::pair<std::priority_queue<std::pair<dist_t, labeltype>>, int>
         searchKnn(const void *query_data, size_t k) const {
-            std::priority_queue<std::pair<dist_t, labeltype >> result;
-            if (cur_element_count == 0) return result;
+            std::pair<std::priority_queue<std::pair<dist_t, labeltype>>, int> return_val;
+            std::priority_queue<std::pair<dist_t, labeltype>> result;
+            int count = 0;
+            if (cur_element_count == 0) {
+                return_val.first = result;
+                return_val.second = count;
+                return return_val;
+            }
 
             tableint currObj = enterpoint_node_;
             dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), dist_func_param_);
+            count++;
 
             for (int level = maxlevel_; level > 0; level--) {
                 bool changed = true;
@@ -932,7 +944,7 @@ namespace hnswlib {
                         if (cand < 0 || cand > max_elements_)
                             throw std::runtime_error("cand error");
                         dist_t d = fstdistfunc_(query_data, getDataByInternalId(cand), dist_func_param_);
-
+                        count++;
                         if (d < curdist) {
                             curdist = d;
                             currObj = cand;
@@ -944,13 +956,17 @@ namespace hnswlib {
 
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
             if (has_deletions_) {
-                std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates1=searchBaseLayerST<true>(
+                std::pair<std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>, int> _result = searchBaseLayerST<true>(
                         currObj, query_data, std::max(ef_, k));
+                std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates1 = _result.first;
+                count = count + _result.second;
                 top_candidates.swap(top_candidates1);
             }
             else{
-                std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates1=searchBaseLayerST<false>(
+                std::pair<std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>, int> _result = searchBaseLayerST<false>(
                         currObj, query_data, std::max(ef_, k));
+                std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates1 = _result.first;
+                count = count + _result.second;
                 top_candidates.swap(top_candidates1);
             }
             while (top_candidates.size() > k) {
@@ -961,7 +977,9 @@ namespace hnswlib {
                 result.push(std::pair<dist_t, labeltype>(rez.first, getExternalLabel(rez.second)));
                 top_candidates.pop();
             }
-            return result;
+            return_val.first = result;
+            return_val.second = count;
+            return return_val;
         };
 
         template <typename Comp>
@@ -970,7 +988,8 @@ namespace hnswlib {
             std::vector<std::pair<dist_t, labeltype>> result;
             if (cur_element_count == 0) return result;
 
-            auto ret = searchKnn(query_data, k);
+            auto ret_and_count = searchKnn(query_data, k);
+            auto ret = ret_and_count.first();
 
             while (!ret.empty()) {
                 result.push_back(ret.top());
